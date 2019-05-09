@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 from sklearn import preprocessing
 from sklearn.metrics import mean_squared_error
-from sklearn.model_selection import GridSearchCV, KFold, TimeSeriesSplit
+from sklearn.model_selection import GridSearchCV, KFold
 from mydf import *
 from datetime import datetime, timedelta
 import math
@@ -49,7 +49,7 @@ class AttnDecoderRNN(nn.Module):
 
         self.attn = nn.Linear(2*self.hidden_size, self.max_length) # 512 => 10
         self.attn_combine = nn.Linear(2*self.hidden_size, self.hidden_size) # 512 => 256
-        self.gru = nn.GRU(self.hidden_size, self.hidden_size, batch_first=True)
+        self.gru = nn.GRU(self.hidden_size, self.hidden_size)
 
     def forward(self, input, hidden, encoder_last_layer_outputs):
         attn = self.attn(torch.cat((input[0], hidden[0]), 1)) # (1, 2*hidden_size) => (1, max_length)
@@ -74,9 +74,8 @@ class GRU_seq2seq(nn.Module):
         self.reg = nn.Linear(hidden_size, output_size) 
       
     def forward(self, x):
-        x, encoder_hidden = self.GRU_encoder(x) 
+        x, decoder_hidden = self.GRU_encoder(x) 
         encoder_last_layer_outputs = x[0]
-        decoder_hidden = encoder_hidden[[-1]]
         decoder_input = decoder_hidden  # (1, 1, hidden_size)
         decoder_output_list = []
         for di in range(self.prediction_length):
@@ -110,7 +109,13 @@ class QuantileLoss(nn.Module):
 def RMSE(x, y, model, std_target, scaler):
     predict_value = [model(x[[i]])[0, :, 0].data.numpy() for i in range(len(x))]
     actual_value =  y.data.numpy()
-    return np.sqrt(mean_squared_error(predict_value, actual_value))*std_target*scaler    
+    return np.sqrt(mean_squared_error(predict_value, actual_value))*std_target*scaler
+
+def add_data_by_time(data, n_cut = 5):
+    n_len = data.shape[0]
+    n_each = n_len//n_cut
+    data_list = [data[i*n_each:] for i in range(n_cut)]
+    return torch.cat(data_list, 0)
     
 def fit(data_source, target_column, output_filename = None, model_source = None,
         freq = '1M',
@@ -118,12 +123,10 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
         prediction_length = 12,
         time_step = 24,
         prediction_quantile = [0.05, 0.95],
-        test_set_percent = None,
-        cv_mode = 'kfold',
-        n_splits = 5,
-        hidden_size = 50,
+        n_cut = 5,
+        n_splits = 10,
+        hidden_size = 10,
         learning_rate = 1e-2,
-        weight_decay = 0,
         early_stopping_patience = 500,
         epochs = 5000):
     ###############################################################################################################
@@ -171,6 +174,11 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
     final_ranges_x = sample_ranges_x[:-prediction_length]
     final_ranges_y = sample_ranges_y[time_step:]
     ###############################################################################################################
+    ###  add data by time
+    ###############################################################################################################
+    data_x = add_data_by_time(data_x, n_cut)
+    data_y = add_data_by_time(data_y, n_cut)
+    ###############################################################################################################
     ###  apply window-move size = prediction_length/3
     ###############################################################################################################
     #window_move = math.ceil(prediction_length/5)
@@ -179,19 +187,7 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
     ###############################################################################################################
     ###  k-fold split
     ###############################################################################################################
-    if test_set_percent is not None:
-        test_size = int(len(data_x) * test_set_percent)
-        test_x = data_x[-test_size:]
-        test_y = data_y[-test_size:] 
-        data_x = data_x[:-test_size]    
-        data_y = data_y[:-test_size]
-    else:
-        test_size = 0
-
-    if cv_mode == 'kfold':
-        splits = list(KFold(n_splits=n_splits, shuffle=True, random_state=2019).split(data_x, data_y))
-    else:
-        splits = list(TimeSeriesSplit(n_splits=n_splits).split(data_x, data_y))
+    splits = list(KFold(n_splits=n_splits, shuffle=True, random_state=2019).split(data_x, data_y))
     train_size = len(splits[0][0])
     validate_size = len(splits[0][1])
     ###############################################################################################################
@@ -221,7 +217,7 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
 
         if model_source is not None:
             net.load_state_dict(model_list[model_index]['state_dict'])
-        optimizer = torch.optim.Adam(net.parameters(), lr = learning_rate, weight_decay = weight_decay)
+        optimizer = torch.optim.Adam(net.parameters(), lr = learning_rate)
         
         std_target =  np.sqrt(scaler_std.var_)[target_column_index]
         if std_target == 0: std_target = 1
@@ -275,29 +271,14 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
         print('-- Best validate loss = {}'.format(best_validate_loss))
         RMSE_list.append(best_validate_loss)
 
-    mean_CV_RMSE = np.mean(RMSE_list) 
-    print('mean CV RMSE =', mean_CV_RMSE)
-
-    if test_set_percent is not None:
-        pred_result_total = []
-        for i in range(test_size):
-            pred_result_list = []
-            for inner_model in model_list:
-                net.load_state_dict(inner_model['state_dict'])
-                net.eval()
-                with torch.no_grad():
-                    pred_result_list.append( net(test_x[[i]])[0, :, 0].data.numpy() )
-            pred_result = np.mean(pred_result_list, axis=0)
-            pred_result_total.append(pred_result)
-        test_RMSE = np.sqrt(mean_squared_error(pred_result_total, test_y.data.numpy()))*std_target*scaler  
-    else:
-        test_RMSE = -1
+    mean_RMSE = np.mean(RMSE_list) 
+    print('mean RMSE =', mean_RMSE)
     ###############################################################################################################
     ###  Output 
     ###############################################################################################################
     output_model = {
         'model_list': model_list,
-        'mean_CV_RMSE' : mean_CV_RMSE,
+        'mean_RMSE' : mean_RMSE,
         'scaler_std':scaler_std,
         'features': features,
         'target_column':target_column,
@@ -312,12 +293,8 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
         'prediction_length': prediction_length,
         'train_size':train_size,
         'validate_size':validate_size,
-        'test_size':test_size,
         'n_splits':n_splits,
-        'cv_mode':cv_mode,
-        'weight_decay':weight_decay,
-        'test_set_percent': test_set_percent,
-        'test_RMSE': test_RMSE
+        'n_cut':n_cut
     }
     
     if output_filename is not None: torch.save(output_model, output_filename)
@@ -379,10 +356,10 @@ def predict(data_source, model_source, predict_start_time):
     mean_target =  scaler_std.mean_[target_column_index]
 
     pred_result_list = []
-    inpu_data = torch.tensor(scaler_std.transform(df.iloc[input_data_range])).float().unsqueeze(0)/scaler
     for inner_model in model_list:
         net.load_state_dict(inner_model['state_dict'])
         net.eval()
+        inpu_data = torch.tensor(scaler_std.transform(df.iloc[input_data_range])).float().unsqueeze(0)/scaler
         with torch.no_grad():
             pred_result_list.append( net(inpu_data).data.numpy()[0]*std_target*scaler + mean_target )
 
@@ -411,10 +388,7 @@ def predict_to_gif(data_source, model_source, predict_start_time, filename,
     prediction_length = model['prediction_length']
     Quantile = model['Quantile']
     n_splits = model['n_splits']
-    mean_CV_RMSE = model['mean_CV_RMSE']
-    test_RMSE = model['test_RMSE']
-    test_set_percent = model['test_set_percent']
-    cv_mode = model['cv_mode']
+    mean_RMSE = model['mean_RMSE']
 
     if 'time' in df.columns.tolist():
         df.index = df.time.astype('datetime64[ns]')
@@ -462,22 +436,10 @@ def predict_to_gif(data_source, model_source, predict_start_time, filename,
         p2 = ax.plot(time_index_pred, pred_result['predict_result'][str(Quantile[0])], 'r')[0]
         p3 = ax.fill_between(time_index_pred,  pred_result['predict_result'][str(Quantile[1])],  pred_result['predict_result'][str(Quantile[2])], color = 'c')
         p4 = ax.plot([], [], ' ')[0]
-        if cv_mode == 'kfold':
-            label_cv_mode = 'fold'
-        else:
-            label_cv_mode = 'ts'
-
-        if test_set_percent is None:
-            ax.legend([p1, p2, p3, p4], 
-                    ('實際值', '預測值', '{:.0%} 預測區間'.format(Quantile[2]-Quantile[1]), 
-                    '{}-{} CV mean RMSE = {:.4f}'.format(n_splits, label_cv_mode, mean_CV_RMSE)    )
-                    , loc='best', prop=font)
-        else:
-            ax.legend([p1, p2, p3, p4, p4], 
-                    ('實際值', '預測值', '{:.0%} 預測區間'.format(Quantile[2]-Quantile[1]), 
-                    '{}-{} CV mean RMSE = {:.4f}'.format(n_splits, label_cv_mode, mean_CV_RMSE),
-                    'test RMSE = {:.4f}'.format(test_RMSE)    )
-                    , loc='best', prop=font)
+        ax.legend([p1, p2, p3, p4], 
+                ('實際值', '預測值', '{:.0%} 預測區間'.format(Quantile[2]-Quantile[1]), 
+                 '{}-fold CV mean RMSE = {:.4f}'.format(n_splits, mean_RMSE)    )
+                , loc='best', prop=font)
         ax.set_xticks(time_index[::ticks_step])
         ax.set_xticklabels(time_index_label[::ticks_step])
         ax.set_ylabel(target_column, fontproperties=font, fontsize = 20)

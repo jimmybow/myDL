@@ -117,8 +117,11 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
                         time_step = 24,
                         prediction_quantile = [0.05, 0.95],
                         train_set_percent = 0.7,
+                        test_set_percent = None,
+                        split_way = 'random',
                         hidden_size = 10,
                         learning_rate = 1e-2,
+                        weight_decay = 0,
                         early_stopping_patience = 500,
                         epochs = 5000):
     ###############################################################################################################
@@ -181,22 +184,34 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
     ###############################################################################################################
     ###  split data to train / validate / test set
     ###############################################################################################################
+    if test_set_percent is not None:
+        test_size = int(len(data_x) * test_set_percent)
+    else:
+        test_size = 0
     train_size = int(len(data_x) * train_set_percent)
-    validate_size = (len(data_x) - train_size)//2
-    test_size = len(data_x) - train_size - validate_size
+    validate_size = len(data_x) - train_size - test_size
+
     if validate_size <= 0: 
         raise Exception('The train_set_percent is too large so that there is no validate set')
-    elif test_size <= 0:
-        raise Exception('The train_set_percent is too large so that there is no test set')
-        
-    dataset = torch_Dataset(data_x, data_y)
-    train_dataset, validate_dataset, test_dataset = Data.random_split(dataset, [train_size, validate_size, test_size])
+
+    if test_set_percent is not None:
+        test_x = data_x[-test_size:]
+        test_y = data_y[-test_size:] 
+        data_x = data_x[:-test_size]    
+        data_y = data_y[:-test_size]
+
+    if split_way == 'random':
+        dataset = torch_Dataset(data_x, data_y)
+        train_dataset, validate_dataset = Data.random_split(dataset, [train_size, validate_size])
+        validate_x = validate_dataset[:][0]
+        validate_y = validate_dataset[:][1]
+    else:
+        train_dataset = torch_Dataset(data_x[:train_size], data_y[:train_size])
+        validate_x = data_x[train_size:]
+        validate_y = data_y[train_size:] 
+
     train_x = train_dataset[:][0]
     train_y = train_dataset[:][1]
-    validate_x = validate_dataset[:][0]
-    validate_y = validate_dataset[:][1]
-    test_x = test_dataset[:][0]
-    test_y = test_dataset[:][1]
     ###############################################################################################################
     ###  model train
     ###############################################################################################################
@@ -211,7 +226,7 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
 
     train_loader = Data.DataLoader(dataset = train_dataset, batch_size = mini_batch_size, shuffle = True)
     loss_func = QuantileLoss(Quantile)
-    optimizer = torch.optim.Adam(net.parameters(), lr = learning_rate)
+    optimizer = torch.optim.Adam(net.parameters(), lr = learning_rate, weight_decay = weight_decay)
     
     std_target =  np.sqrt(scaler_std.var_)[target_column_index]
     if std_target == 0: std_target = 1
@@ -273,10 +288,13 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
                     'RMSE_train': RMSE_train,
                     'RMSE_validate': RMSE_validate,
                     'RMSE_test':RMSE_test,
+                    'split_way':split_way,
                     'train_size':train_size,
                     'validate_size':validate_size,
                     'test_size':test_size,
-                    'train_set_percent':train_set_percent
+                    'train_set_percent':train_set_percent,
+                    'test_set_percent':test_set_percent,
+                    'weight_decay':weight_decay
                     }
     
     if output_filename is not None: torch.save(output_model, output_filename)
