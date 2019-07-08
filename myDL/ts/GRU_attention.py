@@ -244,7 +244,8 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
             optimizer.step()
         # evaluation mode
         net.eval()        
-        validate_RMSE = RMSE(validate_x, validate_y, net, std_target, scaler)
+        with torch.no_grad():
+            validate_RMSE = RMSE(validate_x, validate_y, net, std_target, scaler)
         if epoch == 0 or validate_RMSE < best_validate_RMSE:            
             best_validate_RMSE = validate_RMSE
             best_state_dict = copy.deepcopy(net.state_dict())
@@ -261,9 +262,13 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
     ######################################################################################################
     net.load_state_dict(best_state_dict)
     net.eval()        
-    RMSE_train    = RMSE(train_x, train_y, net, std_target, scaler)
-    RMSE_validate = RMSE(validate_x, validate_y, net, std_target, scaler)
-    RMSE_test     = RMSE(test_x, test_y, net, std_target, scaler)
+    with torch.no_grad():
+        RMSE_train    = RMSE(train_x, train_y, net, std_target, scaler)
+        RMSE_validate = RMSE(validate_x, validate_y, net, std_target, scaler)
+        if test_set_percent is not None:
+            RMSE_test = RMSE(test_x, test_y, net, std_target, scaler)
+        else:
+            RMSE_test = -1
     print('training complete ! Select Best Epoch:', best_epoch)
     print('train set     RMSE =', RMSE_train)
     print('validate set  RMSE =', RMSE_validate)
@@ -358,7 +363,8 @@ def predict(data_source, model_source, predict_start_time):
     mean_target =  scaler_std.mean_[target_column_index]
     
     inpu_data = torch.tensor(scaler_std.transform(df.iloc[input_data_range])).float().unsqueeze(0)/scaler
-    pred_result = net(inpu_data).data.numpy()[0]*std_target*scaler + mean_target
+    with torch.no_grad():
+        pred_result = net(inpu_data).data.numpy()[0]*std_target*scaler + mean_target
     pred_result_dict = {str(q):pred_result[:, i].tolist() for i, q in enumerate(Quantile)}
     
     return {'predict_target': target_column,
