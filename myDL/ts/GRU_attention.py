@@ -100,7 +100,9 @@ class QuantileLoss(nn.Module):
             losses.append(
                 torch.max( (q-1) * errors, q * errors ).unsqueeze(2)
             )
-        loss = torch.mean(torch.sum(torch.cat(losses, dim=2), dim=2))
+        result = torch.sum(torch.cat(losses, dim=2), dim=2)
+        w = torch.unsqueeze(torch.arange(result.shape[1],0,-1), 1).float()/np.arange(result.shape[1],0,-1).sum()
+        loss = torch.mean(torch.mm(result, w))
         return loss
 ###############################################################################################################
 ###  define function
@@ -117,7 +119,7 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
                         time_step = 24,
                         prediction_quantile = [0.05, 0.95],
                         train_set_percent = 0.7,
-                        test_set_percent = None,
+                        test_size = 0,
                         split_way = 'random',
                         hidden_size = 10,
                         learning_rate = 1e-2,
@@ -184,21 +186,17 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
     ###############################################################################################################
     ###  split data to train / validate / test set
     ###############################################################################################################
-    if test_set_percent is not None:
-        test_size = int(len(data_x) * test_set_percent)
-    else:
-        test_size = 0
-    train_size = int(len(data_x) * train_set_percent)
-    validate_size = len(data_x) - train_size - test_size
-
-    if validate_size <= 0: 
-        raise Exception('The train_set_percent is too large so that there is no validate set')
-
-    if test_set_percent is not None:
+    if test_size > 0:
         test_x = data_x[-test_size:]
         test_y = data_y[-test_size:] 
         data_x = data_x[:-test_size]    
         data_y = data_y[:-test_size]
+
+    train_size = int(len(data_x) * train_set_percent)
+    validate_size = len(data_x) - train_size
+
+    if validate_size <= 0: 
+        raise Exception('The train_set_percent is too large so that there is no validate set')
 
     if split_way == 'random':
         dataset = torch_Dataset(data_x, data_y)
@@ -246,16 +244,20 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
         net.eval()        
         with torch.no_grad():
             validate_RMSE = RMSE(validate_x, validate_y, net, std_target, scaler)
+            if test_size > 0:
+                test_RMSE = RMSE(test_x, test_y, net, std_target, scaler)
+            else:
+                test_RMSE = -1
         if epoch == 0 or validate_RMSE < best_validate_RMSE:            
             best_validate_RMSE = validate_RMSE
             best_state_dict = copy.deepcopy(net.state_dict())
             best_epoch = epoch
-            print('Best Epoch:', epoch, 'Train_loss:', '%.10f' % loss.item(), 'Validate_RMSE:', '%.10f' % validate_RMSE)
+            print('Best Epoch:', epoch, 'Train_loss:', '%.10f' % loss.item(), 'Validate_RMSE:', '%.10f' % validate_RMSE, 'test_RMSE:', '%.10f' % test_RMSE)
         elif epoch - best_epoch > early_stopping_patience: 
             print("Validate_RMSE don't imporved for {} epoch, training stop !".format(early_stopping_patience))
             break
         else:
-            print('     Epoch:', epoch, 'Train_loss:', '%.10f' % loss.item(), 'Validate_RMSE:', '%.10f' % validate_RMSE)
+            print('     Epoch:', epoch, 'Train_loss:', '%.10f' % loss.item(), 'Validate_RMSE:', '%.10f' % validate_RMSE, 'test_RMSE:', '%.10f' % test_RMSE)
         
     ######################################################################################################
     ###  final model evaluation
@@ -265,7 +267,7 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
     with torch.no_grad():
         RMSE_train    = RMSE(train_x, train_y, net, std_target, scaler)
         RMSE_validate = RMSE(validate_x, validate_y, net, std_target, scaler)
-        if test_set_percent is not None:
+        if test_size > 0:
             RMSE_test = RMSE(test_x, test_y, net, std_target, scaler)
         else:
             RMSE_test = -1
@@ -298,7 +300,6 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
                     'validate_size':validate_size,
                     'test_size':test_size,
                     'train_set_percent':train_set_percent,
-                    'test_set_percent':test_set_percent,
                     'weight_decay':weight_decay
                     }
     

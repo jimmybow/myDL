@@ -102,7 +102,9 @@ class QuantileLoss(nn.Module):
             losses.append(
                 torch.max( (q-1) * errors, q * errors ).unsqueeze(2)
             )
-        loss = torch.mean(torch.sum(torch.cat(losses, dim=2), dim=2))
+        result = torch.sum(torch.cat(losses, dim=2), dim=2)
+        w = torch.unsqueeze(torch.arange(result.shape[1],0,-1), 1).float()/np.arange(result.shape[1],0,-1).sum()
+        loss = torch.mean(torch.mm(result, w))
         return loss
 ###############################################################################################################
 ###  define function
@@ -118,7 +120,7 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
         prediction_length = 12,
         time_step = 24,
         prediction_quantile = [0.05, 0.95],
-        test_set_percent = None,
+        test_size = 0,
         cv_mode = 'kfold',
         n_splits = 5,
         hidden_size = 50,
@@ -179,14 +181,11 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
     ###############################################################################################################
     ###  k-fold split
     ###############################################################################################################
-    if test_set_percent is not None:
-        test_size = int(len(data_x) * test_set_percent)
+    if test_size > 0:
         test_x = data_x[-test_size:]
         test_y = data_y[-test_size:] 
         data_x = data_x[:-test_size]    
         data_y = data_y[:-test_size]
-    else:
-        test_size = 0
 
     if cv_mode == 'kfold':
         splits = list(KFold(n_splits=n_splits, shuffle=True, random_state=2019).split(data_x, data_y))
@@ -278,7 +277,7 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
     mean_CV_RMSE = np.mean(RMSE_list) 
     print('mean CV RMSE =', mean_CV_RMSE)
 
-    if test_set_percent is not None:
+    if test_size > 0:
         pred_result_total = []
         for i in range(test_size):
             pred_result_list = []
@@ -316,7 +315,6 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
         'n_splits':n_splits,
         'cv_mode':cv_mode,
         'weight_decay':weight_decay,
-        'test_set_percent': test_set_percent,
         'test_RMSE': test_RMSE
     }
     
@@ -413,7 +411,6 @@ def predict_to_gif(data_source, model_source, predict_start_time, filename,
     n_splits = model['n_splits']
     mean_CV_RMSE = model['mean_CV_RMSE']
     test_RMSE = model['test_RMSE']
-    test_set_percent = model['test_set_percent']
     cv_mode = model['cv_mode']
 
     if 'time' in df.columns.tolist():
@@ -467,17 +464,11 @@ def predict_to_gif(data_source, model_source, predict_start_time, filename,
         else:
             label_cv_mode = 'ts'
 
-        if test_set_percent is None:
-            ax.legend([p1, p2, p3, p4], 
-                    ('實際值', '預測值', '{:.0%} 預測區間'.format(Quantile[2]-Quantile[1]), 
-                    '{}-{} CV mean RMSE = {:.4f}'.format(n_splits, label_cv_mode, mean_CV_RMSE)    )
-                    , loc='best', prop=font)
-        else:
-            ax.legend([p1, p2, p3, p4, p4], 
-                    ('實際值', '預測值', '{:.0%} 預測區間'.format(Quantile[2]-Quantile[1]), 
-                    '{}-{} CV mean RMSE = {:.4f}'.format(n_splits, label_cv_mode, mean_CV_RMSE),
-                    'test RMSE = {:.4f}'.format(test_RMSE)    )
-                    , loc='best', prop=font)
+        ax.legend([p1, p2, p3, p4, p4], 
+                ('實際值', '預測值', '{:.0%} 預測區間'.format(Quantile[2]-Quantile[1]), 
+                '{}-{} CV mean RMSE = {:.4f}'.format(n_splits, label_cv_mode, mean_CV_RMSE),
+                'test RMSE = {:.4f}'.format(test_RMSE)    )
+                , loc='best', prop=font)
         ax.set_xticks(time_index[::ticks_step])
         ax.set_xticklabels(time_index_label[::ticks_step])
         ax.set_ylabel(target_column, fontproperties=font, fontsize = 20)
