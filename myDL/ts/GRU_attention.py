@@ -232,12 +232,13 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
     validate_y_std = torch.tensor(np.sqrt(scaler_std.var_[target_column_index])).float().expand(validate_y.shape) 
     validate_y = (validate_y-validate_y_m)/validate_y_std/scaler    
 
-    test_x_m = torch.tensor(scaler_std.mean_).float().expand(test_x.shape) 
-    test_x_std = torch.tensor(np.sqrt(scaler_std.var_)).float().expand(test_x.shape) 
-    test_x = (test_x-test_x_m)/test_x_std/scaler
-    test_y_m = torch.tensor(scaler_std.mean_[target_column_index]).float().expand(test_y.shape) 
-    test_y_std = torch.tensor(np.sqrt(scaler_std.var_[target_column_index])).float().expand(test_y.shape) 
-    test_y = (test_y-test_y_m)/test_y_std/scaler
+    if test_size > 0:
+        test_x_m = torch.tensor(scaler_std.mean_).float().expand(test_x.shape) 
+        test_x_std = torch.tensor(np.sqrt(scaler_std.var_)).float().expand(test_x.shape) 
+        test_x = (test_x-test_x_m)/test_x_std/scaler
+        test_y_m = torch.tensor(scaler_std.mean_[target_column_index]).float().expand(test_y.shape) 
+        test_y_std = torch.tensor(np.sqrt(scaler_std.var_[target_column_index])).float().expand(test_y.shape) 
+        test_y = (test_y-test_y_m)/test_y_std/scaler
     ###############################################################################################################
     ###  model train
     ###############################################################################################################
