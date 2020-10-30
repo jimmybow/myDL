@@ -101,6 +101,7 @@ class QuantileLoss(nn.Module):
                 torch.max( (q-1) * errors, q * errors ).unsqueeze(2)
             )
         result = torch.sum(torch.cat(losses, dim=2), dim=2)
+        # 加入權重：離目前的時間點越遠，越能容許預測值有錯誤，損失值越小
         w = torch.unsqueeze(torch.arange(result.shape[1],0,-1), 1).float()/np.arange(result.shape[1],0,-1).sum()
         loss = torch.mean(torch.mm(result, w))
         return loss
@@ -160,9 +161,7 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
     elif len(df) <= time_step + prediction_length - 1:
         raise Exception("The sample size is too low after aggregated, it's not enough to training")
         
-    scaler = 10
-    scaler_std = preprocessing.StandardScaler()
-    data_norm = scaler_std.fit_transform(df)/scaler
+    data_norm = df.values
     
     # 只會有 len(data_norm) - time_step + 1 個樣本 = len(sample_ranges_x)
     sample_ranges_x = [range(i, i + time_step) for i in range(len(data_norm)) if i + time_step <= len(data_norm)]
@@ -211,6 +210,35 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
     train_x = train_dataset[:][0]
     train_y = train_dataset[:][1]
     ###############################################################################################################
+    ###  normalization on train
+    ###############################################################################################################
+    scaler = 10
+    scaler_std = preprocessing.StandardScaler()
+    scaler_std.fit_transform(train_x.view(train_x.shape[0]*train_x.shape[1], train_x.shape[2]).data.numpy())
+    ###############################################################################################################
+    ###  apply normalization to validate, test
+    ###############################################################################################################    
+    train_x_m = torch.tensor(scaler_std.mean_).float().expand(train_x.shape) 
+    train_x_std = torch.tensor(np.sqrt(scaler_std.var_)).float().expand(train_x.shape) 
+    train_x = (train_x-train_x_m)/train_x_std/scaler
+    train_y_m = torch.tensor(scaler_std.mean_[target_column_index]).float().expand(train_y.shape) 
+    train_y_std = torch.tensor(np.sqrt(scaler_std.var_[target_column_index])).float().expand(train_y.shape) 
+    train_y = (train_y-train_y_m)/train_y_std/scaler
+
+    validate_x_m = torch.tensor(scaler_std.mean_).float().expand(validate_x.shape) 
+    validate_x_std = torch.tensor(np.sqrt(scaler_std.var_)).float().expand(validate_x.shape) 
+    validate_x = (validate_x-validate_x_m)/validate_x_std/scaler
+    validate_y_m = torch.tensor(scaler_std.mean_[target_column_index]).float().expand(validate_y.shape) 
+    validate_y_std = torch.tensor(np.sqrt(scaler_std.var_[target_column_index])).float().expand(validate_y.shape) 
+    validate_y = (validate_y-validate_y_m)/validate_y_std/scaler    
+
+    test_x_m = torch.tensor(scaler_std.mean_).float().expand(test_x.shape) 
+    test_x_std = torch.tensor(np.sqrt(scaler_std.var_)).float().expand(test_x.shape) 
+    test_x = (test_x-test_x_m)/test_x_std/scaler
+    test_y_m = torch.tensor(scaler_std.mean_[target_column_index]).float().expand(test_y.shape) 
+    test_y_std = torch.tensor(np.sqrt(scaler_std.var_[target_column_index])).float().expand(test_y.shape) 
+    test_y = (test_y-test_y_m)/test_y_std/scaler
+    ###############################################################################################################
     ###  model train
     ###############################################################################################################
     net = GRU_seq2seq(input_size = len(features),
@@ -233,6 +261,13 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
         # training mode
         net.train()     
         for step, (x, y) in enumerate(train_loader, 1): 
+            # 標準化
+            x_m = torch.tensor(scaler_std.mean_).float().expand(x.shape) 
+            x_std = torch.tensor(np.sqrt(scaler_std.var_)).float().expand(x.shape) 
+            x = (x-x_m)/x_std/scaler
+            y_m = torch.tensor(scaler_std.mean_[target_column_index]).float().expand(y.shape) 
+            y_std = torch.tensor(np.sqrt(scaler_std.var_[target_column_index])).float().expand(y.shape) 
+            y = (y-y_m)/y_std/scaler
             # 前向传播
             out = net(x)  # (mini_batch, 12, 3)
             loss = loss_func(out, y)  
