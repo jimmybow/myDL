@@ -218,26 +218,26 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
     ###############################################################################################################
     ###  apply normalization to validate, test
     ###############################################################################################################    
-    train_x_m = torch.tensor(scaler_std.mean_).float().expand(train_x.shape) 
-    train_x_std = torch.tensor(np.sqrt(scaler_std.var_)).float().expand(train_x.shape) 
+    train_x_m = torch.tensor(scaler_std.mean_).float()
+    train_x_std = torch.tensor(np.sqrt(scaler_std.var_)).float()
     train_x = (train_x-train_x_m)/train_x_std/scaler
-    train_y_m = torch.tensor(scaler_std.mean_[target_column_index]).float().expand(train_y.shape) 
-    train_y_std = torch.tensor(np.sqrt(scaler_std.var_[target_column_index])).float().expand(train_y.shape) 
+    train_y_m = torch.tensor(scaler_std.mean_[target_column_index]).float()
+    train_y_std = torch.tensor(np.sqrt(scaler_std.var_[target_column_index])).float()
     train_y = (train_y-train_y_m)/train_y_std/scaler
 
-    validate_x_m = torch.tensor(scaler_std.mean_).float().expand(validate_x.shape) 
-    validate_x_std = torch.tensor(np.sqrt(scaler_std.var_)).float().expand(validate_x.shape) 
+    validate_x_m = torch.tensor(scaler_std.mean_).float()
+    validate_x_std = torch.tensor(np.sqrt(scaler_std.var_)).float()
     validate_x = (validate_x-validate_x_m)/validate_x_std/scaler
-    validate_y_m = torch.tensor(scaler_std.mean_[target_column_index]).float().expand(validate_y.shape) 
-    validate_y_std = torch.tensor(np.sqrt(scaler_std.var_[target_column_index])).float().expand(validate_y.shape) 
+    validate_y_m = torch.tensor(scaler_std.mean_[target_column_index]).float()
+    validate_y_std = torch.tensor(np.sqrt(scaler_std.var_[target_column_index])).float()
     validate_y = (validate_y-validate_y_m)/validate_y_std/scaler    
 
     if test_size > 0:
-        test_x_m = torch.tensor(scaler_std.mean_).float().expand(test_x.shape) 
-        test_x_std = torch.tensor(np.sqrt(scaler_std.var_)).float().expand(test_x.shape) 
+        test_x_m = torch.tensor(scaler_std.mean_).float()
+        test_x_std = torch.tensor(np.sqrt(scaler_std.var_)).float()
         test_x = (test_x-test_x_m)/test_x_std/scaler
-        test_y_m = torch.tensor(scaler_std.mean_[target_column_index]).float().expand(test_y.shape) 
-        test_y_std = torch.tensor(np.sqrt(scaler_std.var_[target_column_index])).float().expand(test_y.shape) 
+        test_y_m = torch.tensor(scaler_std.mean_[target_column_index]).float()
+        test_y_std = torch.tensor(np.sqrt(scaler_std.var_[target_column_index])).float()
         test_y = (test_y-test_y_m)/test_y_std/scaler
     ###############################################################################################################
     ###  model train
@@ -263,11 +263,11 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
         net.train()     
         for step, (x, y) in enumerate(train_loader, 1): 
             # 標準化
-            x_m = torch.tensor(scaler_std.mean_).float().expand(x.shape) 
-            x_std = torch.tensor(np.sqrt(scaler_std.var_)).float().expand(x.shape) 
+            x_m = torch.tensor(scaler_std.mean_).float()
+            x_std = torch.tensor(np.sqrt(scaler_std.var_)).float()
             x = (x-x_m)/x_std/scaler
-            y_m = torch.tensor(scaler_std.mean_[target_column_index]).float().expand(y.shape) 
-            y_std = torch.tensor(np.sqrt(scaler_std.var_[target_column_index])).float().expand(y.shape) 
+            y_m = torch.tensor(scaler_std.mean_[target_column_index]).float()
+            y_std = torch.tensor(np.sqrt(scaler_std.var_[target_column_index])).float()
             y = (y-y_m)/y_std/scaler
             # 前向传播
             out = net(x)  # (mini_batch, 12, 3)
