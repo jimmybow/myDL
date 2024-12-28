@@ -479,4 +479,4 @@ def predict_to_gif(data_source, model_source, predict_start_time, filename,
         plt.cla()
         buf.seek(0)
         image_list.append(imageio.imread(buf))
-    imageio.mimsave(filename, image_list, duration=1.5)
+    imageio.mimsave(filename, image_list, fps=1, loop=0)
