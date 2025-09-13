@@ -152,7 +152,6 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
     df = df.astype(float).resample(freq).mean()
     if data_use_length is not None: df = df.iloc[-data_use_length:]
     features = df.columns.tolist()
-    target_column_index = features.index(target_column)
     time_index = df.index
     if df.isnull().values.sum() > 0:
         print("The data source has missing value after aggregated by freq = '{}'".format(freq))
@@ -166,7 +165,7 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
 
     epsilon = 1e-6
     new_target_column = df[target_column].replace(0, epsilon)
-    new_target_column = np.log(new_target_column / new_target_column.shift(1))
+    new_target_column = np.log(new_target_column / new_target_column.shift(1)).clip(lower=-3, upper=3)
     if len(normal_cols) > 0:
         data_norm = np.concatenate([new_target_column.to_numpy().reshape(-1,1), df[normal_cols].values], axis=1)[1:]    
     else:
@@ -178,7 +177,7 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
 
     # 只會有 len(data_norm) - prediction_length + 1 個樣本 = len(sample_ranges_y)
     sample_ranges_y = [range(i, i + prediction_length) for i in range(len(data_norm)) if i + prediction_length <= len(data_norm)]
-    data_y = torch.tensor([data_norm[sample_range, target_column_index] for sample_range in sample_ranges_y]).float()
+    data_y = torch.tensor([data_norm[sample_range, 0] for sample_range in sample_ranges_y]).float()
     
     # 最終只會有 len(sample_ranges_x) - prediction_length = len(sample_ranges_y) - time_step 個學習樣本
     # 也就是 len(df) - prediction_length - time_step 個學習樣本
@@ -370,7 +369,6 @@ def predict(data_source, model_source, predict_start_time):
        
     df = df[features].astype(float).resample(freq).mean()
     time_index = pd.date_range(df.index[0], periods= len(df) + prediction_length , freq = freq)
-    target_column_index = features.index(target_column)
     if df.isnull().values.sum() > 0:
         print("The data source has missing value after aggregated by freq = '{}'".format(freq))
         print("Filling missing value use method = 'pad'")
@@ -396,7 +394,7 @@ def predict(data_source, model_source, predict_start_time):
 
     epsilon = 1e-6
     new_target_column = df[target_column].replace(0, epsilon)
-    new_target_column = np.log(new_target_column / new_target_column.shift(1))
+    new_target_column = np.log(new_target_column / new_target_column.shift(1)).clip(lower=-3, upper=3)
     if len(normal_cols) > 0:
         data_norm = scaler_std.transform(df[normal_cols].iloc[input_data_range])/scaler
         data_norm = np.concatenate([new_target_column.iloc[input_data_range].to_numpy().reshape(-1,1), data_norm], axis=1)[1:] 
@@ -446,7 +444,6 @@ def predict_to_gif(data_source, model_source, predict_start_time, filename,
        
     df = df[features].astype(float).resample(freq).mean()
     time_index = pd.date_range(df.index[0], periods= len(df) + prediction_length , freq = freq)
-    target_column_index = features.index(target_column)
     if df.isnull().values.sum() > 0:
         print("The data source has missing value after aggregated by freq = '{}'".format(freq))
         print("Filling missing value use method = 'pad'")
