@@ -140,7 +140,7 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
 
     if model_source is not None:
         if isinstance(model_source, str): 
-            try:    model = torch.load(model_source)
+            try:    model = torch.load(model_source, weights_only=False)
             except: pass    
         else: 
             model = model_source
@@ -343,7 +343,7 @@ def fit(data_source, target_column, output_filename = None, model_source = None,
 
 def predict(data_source, model_source, predict_start_time):
     if isinstance(model_source, str): 
-        model = torch.load(model_source)
+        model = torch.load(model_source, weights_only=False)
     else: 
         model = model_source
     
@@ -419,7 +419,7 @@ def predict(data_source, model_source, predict_start_time):
 def predict_to_gif(data_source, model_source, predict_start_time, filename,
                    ticks_step = 15, size = [15, 7]):
     if isinstance(model_source, str): 
-        model = torch.load(model_source)
+        model = torch.load(model_source, weights_only=False)
     else: 
         model = model_source
     
